@@ -1,0 +1,43 @@
+{
+  "": {
+    "dependencies": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/BTCCWalletApp.d",
+    "object": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/BTCCWalletApp.o",
+    "swift-dependencies": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/master.swiftdeps"
+  },
+  "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/Sources/BTCCWalletApp/AppPaths.swift": {
+    "object": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/AppPaths.swift.o",
+    "swiftmodule": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/AppPaths~partial.swiftmodule",
+    "swift-dependencies": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/AppPaths.swiftdeps",
+    "diagnostics": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/AppPaths.dia"
+  },
+  "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/Sources/BTCCWalletApp/BTCCApiClient.swift": {
+    "object": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/BTCCApiClient.swift.o",
+    "swiftmodule": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/BTCCApiClient~partial.swiftmodule",
+    "swift-dependencies": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/BTCCApiClient.swiftdeps",
+    "diagnostics": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/BTCCApiClient.dia"
+  },
+  "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/Sources/BTCCWalletApp/BTCCWalletApp.swift": {
+    "object": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/BTCCWalletApp.swift.o",
+    "swiftmodule": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/BTCCWalletApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/BTCCWalletApp.swiftdeps",
+    "diagnostics": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/BTCCWalletApp.dia"
+  },
+  "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/Sources/BTCCWalletApp/ContentView.swift": {
+    "object": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/ContentView.swift.o",
+    "swiftmodule": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/ContentView~partial.swiftmodule",
+    "swift-dependencies": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/ContentView.swiftdeps",
+    "diagnostics": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/ContentView.dia"
+  },
+  "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/Sources/BTCCWalletApp/MinerRunner.swift": {
+    "object": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/MinerRunner.swift.o",
+    "swiftmodule": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/MinerRunner~partial.swiftmodule",
+    "swift-dependencies": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/MinerRunner.swiftdeps",
+    "diagnostics": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/MinerRunner.dia"
+  },
+  "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/Sources/BTCCWalletApp/WalletManager.swift": {
+    "object": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/WalletManager.swift.o",
+    "swiftmodule": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/WalletManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/WalletManager.swiftdeps",
+    "diagnostics": "/Users/tt/Documents/BTCC_all_in_one_wallet_mac/gui/native/.build/arm64-apple-macosx/release/BTCCWalletApp.build/WalletManager.dia"
+  }
+}
