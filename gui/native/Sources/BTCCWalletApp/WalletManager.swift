@@ -1,8 +1,24 @@
 import Foundation
-import Security
 
 @MainActor
 final class WalletManager: ObservableObject {
+    struct TransactionRecord: Identifiable {
+        let id: String
+        let txid: String
+        let height: Int?
+        let action: String
+        let amountSats: Int64
+        let timeISO: String?
+        let confirmations: Int?
+    }
+
+    struct HistoryPage {
+        let items: [TransactionRecord]
+        let page: Int
+        let pageCount: Int
+        let total: Int
+    }
+
     @Published var hasWallet = false
     @Published var address = ""
     @Published var mnemonicPreview = ""
@@ -11,14 +27,24 @@ final class WalletManager: ObservableObject {
     @Published var statusMessage = "未创建钱包"
     @Published var isBusy = false
     @Published var lastTxid = ""
+    @Published var transactionHistory: [TransactionRecord] = []
+    @Published var historyPageIndex = 0
+    @Published var historyPageSize = 25
+    @Published var historyTotal = 0
+    @Published var historyHasMore = false
+    @Published var historyNextOffset: Int?
+    @Published var isHistoryLoading = false
 
-    private let service = "org.btc-classic.BTCCWallet"
-
-    init() {
-        reloadFromKeychain()
+    var lastTxExplorerURL: URL? {
+        guard !lastTxid.isEmpty else { return nil }
+        return URL(string: "https://explorer.btc-classic.org/tx/\(lastTxid)")
     }
 
-    func reloadFromKeychain() {
+    init() {
+        reloadWallet()
+    }
+
+    func reloadWallet() {
         if let mnemonic = loadMnemonic() {
             hasWallet = true
             mnemonicPreview = maskMnemonic(mnemonic)
@@ -46,6 +72,7 @@ final class WalletManager: ObservableObject {
             mnemonicPreview = maskMnemonic(mnemonic)
             statusMessage = "钱包已创建"
             await refreshBalance()
+            await refreshHistory()
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -73,6 +100,7 @@ final class WalletManager: ObservableObject {
             mnemonicPreview = maskMnemonic(words)
             statusMessage = "钱包已导入"
             await refreshBalance()
+            await refreshHistory()
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -89,51 +117,131 @@ final class WalletManager: ObservableObject {
         }
     }
 
-    func send(to: String, amountBTCC: String) async {
+    func refreshHistory() async {
+        guard !address.isEmpty else { return }
+        let pageSize = max(1, min(historyPageSize, 100))
+        let offset = max(0, historyPageIndex) * pageSize
+        isHistoryLoading = true
+        defer { isHistoryLoading = false }
+        do {
+            let result = try await BTCCApiClient.fetchExplorerAddressHistory(
+                address: address,
+                limit: pageSize,
+                offset: offset
+            )
+            historyTotal = result.txCount
+            historyHasMore = result.hasMore
+            historyNextOffset = result.nextOffset
+            transactionHistory = result.transactions.filter { !$0.txid.isEmpty }.map { tx in
+                let delta = tx.delta
+                let netSats = delta?.netSats ?? 0
+                return TransactionRecord(
+                    id: tx.txid,
+                    txid: tx.txid,
+                    height: tx.height,
+                    action: Self.historyAction(delta),
+                    amountSats: netSats,
+                    timeISO: tx.timeISO,
+                    confirmations: tx.confirmations
+                )
+            }
+            let maxPage = max(0, historyPageCount(total: historyTotal, pageSize: pageSize) - 1)
+            if historyPageIndex > maxPage {
+                historyPageIndex = maxPage
+            }
+        } catch {
+            transactionHistory = []
+            historyHasMore = false
+            historyNextOffset = nil
+            statusMessage = "历史查询失败: \(error.localizedDescription)"
+        }
+    }
+
+    func historyPage() -> HistoryPage {
+        let pageSize = max(1, historyPageSize)
+        let pageCount = historyPageCount(total: historyTotal, pageSize: pageSize)
+        let page = min(max(historyPageIndex, 0), pageCount - 1)
+        return HistoryPage(items: transactionHistory, page: page, pageCount: pageCount, total: historyTotal)
+    }
+
+    func historyNextPage() async {
+        let info = historyPage()
+        guard info.page + 1 < info.pageCount else { return }
+        historyPageIndex += 1
+        await refreshHistory()
+    }
+
+    func historyPrevPage() async {
+        guard historyPageIndex > 0 else { return }
+        historyPageIndex -= 1
+        await refreshHistory()
+    }
+
+    func setHistoryPageSize(_ pageSize: Int) async {
+        historyPageSize = max(1, min(pageSize, 100))
+        historyPageIndex = 0
+        await refreshHistory()
+    }
+
+    func send(to: String, amountBTCC: String, memo: String = "") async {
         guard let mnemonic = loadMnemonic() else {
             statusMessage = "无钱包"
             return
         }
         let dest = to.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard dest.hasPrefix("cc1") else {
-            statusMessage = "收款地址须为 cc1..."
+        guard Self.isValidRecipientAddress(dest) else {
+            statusMessage = "收款地址校验失败"
             return
         }
-        guard Double(amountBTCC) != nil else {
+        let amount = amountBTCC.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+        guard Self.amountSats(amount) != nil else {
             statusMessage = "金额格式错误"
+            return
+        }
+        let memoText = memo.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.memoBytesOK(memoText) else {
+            statusMessage = "备注最长 80 字节"
             return
         }
         isBusy = true
         statusMessage = "转账中…"
+        lastTxid = ""
         defer { isBusy = false }
         do {
             var args = ["send"]
             args.append(contentsOf: mnemonic.split(separator: " ").map(String.init))
-            args += ["--to", dest, "--amount", amountBTCC]
+            args += ["--to", dest, "--amount", amount]
+            if !memoText.isEmpty {
+                args += ["--memo", memoText]
+            }
             let result = try await runWalletTool(args)
             guard result.ok == true else {
                 statusMessage = result.error ?? "转账失败"
                 return
             }
             lastTxid = result.txid ?? ""
-            statusMessage = lastTxid.isEmpty ? "已广播" : "转账成功: \(lastTxid.prefix(16))…"
+            statusMessage = lastTxid.isEmpty ? "已广播，等待节点返回 TXID" : "转账成功，交易已广播"
             await refreshBalance()
+            await refreshHistory()
         } catch {
             statusMessage = error.localizedDescription
         }
     }
 
     func deleteWallet() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-        ]
-        SecItemDelete(query as CFDictionary)
+        try? FileManager.default.removeItem(at: AppPaths.walletStore)
         hasWallet = false
         address = ""
         mnemonicPreview = ""
         balanceConfirmed = 0
         balanceUnconfirmed = 0
+        lastTxid = ""
+        transactionHistory = []
+        historyPageIndex = 0
+        historyTotal = 0
+        historyHasMore = false
+        historyNextOffset = nil
         statusMessage = "钱包已删除"
     }
 
@@ -150,10 +258,24 @@ final class WalletManager: ObservableObject {
                 address = addr
                 statusMessage = "钱包就绪"
                 await refreshBalance()
+                historyPageIndex = 0
+                await refreshHistory()
             }
         } catch {
             statusMessage = error.localizedDescription
         }
+    }
+
+    private static func historyAction(_ delta: ExplorerDelta?) -> String {
+        guard let delta else { return "未知" }
+        if delta.netSats > 0 { return "收到" }
+        if delta.netSats < 0 { return "转账" }
+        if delta.receivedSats > 0 && delta.sentSats > 0 { return "自转账" }
+        return "未知"
+    }
+
+    private func historyPageCount(total: Int, pageSize: Int) -> Int {
+        max(1, Int(ceil(Double(total) / Double(max(1, pageSize)))))
     }
 
     private struct ToolResult: Decodable {
@@ -162,6 +284,56 @@ final class WalletManager: ObservableObject {
         let address: String?
         let txid: String?
         let error: String?
+        let transactions: [HistoryItem]?
+    }
+
+    private struct HistoryItem: Decodable {
+        let txid: String
+        let height: Int?
+        let action: String?
+        let amountSats: Int64?
+
+        enum CodingKeys: String, CodingKey {
+            case txid
+            case height
+            case action
+            case amountSats = "amount_sats"
+        }
+    }
+
+    private struct WalletStore: Codable {
+        let mnemonic: String
+        let createdAt: String
+    }
+
+    private static func amountSats(_ amount: String) -> Int64? {
+        guard let decimal = Decimal(string: amount, locale: Locale(identifier: "en_US_POSIX")),
+              !decimal.isNaN else {
+            return nil
+        }
+        let sats = decimal * Decimal(100_000_000)
+        var rounded = Decimal()
+        var value = sats
+        NSDecimalRound(&rounded, &value, 0, .plain)
+        guard rounded == sats,
+              let amountSats = Int64(exactly: NSDecimalNumber(decimal: rounded)),
+              amountSats > 0 else {
+            return nil
+        }
+        return amountSats
+    }
+
+    private static func isValidRecipientAddress(_ address: String) -> Bool {
+        let addr = address.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if addr.hasPrefix("cc1"), let separator = addr.lastIndex(of: "1") {
+            let hrp = String(addr[..<separator])
+            return hrp == "cc"
+        }
+        return addr.first == "1" || addr.first == "3"
+    }
+
+    private static func memoBytesOK(_ memo: String) -> Bool {
+        memo.isEmpty || memo.utf8.count <= 80
     }
 
     private func runWalletTool(_ args: [String]) async throws -> ToolResult {
@@ -189,42 +361,35 @@ final class WalletManager: ObservableObject {
                   let result = try? JSONDecoder().decode(ToolResult.self, from: json) else {
                 throw NSError(domain: "wallet", code: 3, userInfo: [NSLocalizedDescriptionKey: text.isEmpty ? "wallet 工具无输出" : text])
             }
-            if proc.terminationStatus != 0, result.ok != true {
+            if result.ok != true {
                 throw NSError(domain: "wallet", code: 4, userInfo: [NSLocalizedDescriptionKey: result.error ?? text])
+            }
+            if proc.terminationStatus != 0 {
+                throw NSError(domain: "wallet", code: 5, userInfo: [NSLocalizedDescriptionKey: result.error ?? "wallet 工具退出码 \(proc.terminationStatus)"])
             }
             return result
         }.value
     }
 
     private func saveMnemonic(_ mnemonic: String) throws {
-        let data = mnemonic.data(using: .utf8) ?? Data()
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: "mnemonic",
-        ]
-        SecItemDelete(query as CFDictionary)
-        var add = query
-        add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        let status = SecItemAdd(add as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw NSError(domain: "wallet", code: Int(status), userInfo: [NSLocalizedDescriptionKey: "Keychain 保存失败 (\(status))"])
-        }
+        let store = WalletStore(
+            mnemonic: mnemonic,
+            createdAt: ISO8601DateFormatter().string(from: Date())
+        )
+        let data = try JSONEncoder().encode(store)
+        let url = AppPaths.walletStore
+        try data.write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     private func loadMnemonic() -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: "mnemonic",
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        let url = AppPaths.walletStore
+        guard let data = try? Data(contentsOf: url),
+              let store = try? JSONDecoder().decode(WalletStore.self, from: data) else {
+            return nil
+        }
+        let words = store.mnemonic.trimmingCharacters(in: .whitespacesAndNewlines)
+        return words.isEmpty ? nil : words
     }
 
     private func maskMnemonic(_ mnemonic: String) -> String {
@@ -275,5 +440,31 @@ final class PoolStatsManager: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+@MainActor
+final class OTCStatsManager: ObservableObject {
+    @Published var isLoading = false
+    @Published var errorMessage = ""
+    @Published var overview: OTCOverview?
+    @Published var lastUpdated = ""
+
+    func refresh() async {
+        isLoading = true
+        errorMessage = ""
+        defer { isLoading = false }
+        do {
+            overview = try await BTCCApiClient.fetchOTCOverview()
+            lastUpdated = Self.timeString(Date())
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private static func timeString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: date)
     }
 }

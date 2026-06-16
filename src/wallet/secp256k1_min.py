@@ -1,30 +1,80 @@
-"""Minimal secp256k1 helpers for BIP32 + signing (pure Python, stdlib only)."""
+"""Minimal secp256k1 helpers for BIP32 and transaction signing."""
 
 from __future__ import annotations
 
 import hashlib
-import hmac
-import struct
+import subprocess
 
 P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
 N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
-A = 0
-B = 7
-Gx = 55066263022277343669578718895168534326250603453777594175500187360389150533434
-Gy = 32670510020758816978083085130507043184471273380659243275938904345752686056
-G = (Gx, Gy)
+GX = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+GY = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
+G = (GX, GY)
 
 
-def _modinv(a: int, m: int) -> int:
-    return pow(a, -1, m)
+def privkey_to_pubkey(priv: bytes, compressed: bool = True) -> bytes:
+    k = int.from_bytes(priv, "big")
+    if k <= 0 or k >= N:
+        raise ValueError("invalid private key")
+    x, y = _point_mul(k, G)
+    xb = x.to_bytes(32, "big")
+    yb = y.to_bytes(32, "big")
+    if compressed:
+        return bytes([0x02 | (y & 1)]) + xb
+    return b"\x04" + xb + yb
 
 
-def _mod_sqrt(a: int) -> int:
-    # p % 4 == 3 for secp256k1
-    return pow(a, (P + 1) // 4, P)
+def sign(priv: bytes, digest32: bytes, low_s: bool = True) -> bytes:
+    if len(digest32) != 32:
+        raise ValueError("digest must be 32 bytes")
+    d = int.from_bytes(priv, "big")
+    if d <= 0 or d >= N:
+        raise ValueError("invalid private key")
+    z = int.from_bytes(digest32, "big")
+
+    for k in _rfc6979_k(priv, digest32):
+        x, _ = _point_mul(k, G)
+        r = x % N
+        if r == 0:
+            continue
+        s = (_modinv(k, N) * (z + r * d)) % N
+        if s == 0:
+            continue
+        if low_s and s > N // 2:
+            s = N - s
+        return _encode_der(r, s)
+    raise RuntimeError("failed to generate signature")
 
 
-def point_add(p1: tuple[int, int] | None, p2: tuple[int, int] | None) -> tuple[int, int] | None:
+def _rfc6979_k(priv: bytes, digest32: bytes):
+    x = priv
+    h1 = digest32
+    v = b"\x01" * 32
+    k = b"\x00" * 32
+    k = hmac_sha256(k, v + b"\x00" + x + h1)
+    v = hmac_sha256(k, v)
+    k = hmac_sha256(k, v + b"\x01" + x + h1)
+    v = hmac_sha256(k, v)
+    while True:
+        v = hmac_sha256(k, v)
+        candidate = int.from_bytes(v, "big")
+        if 1 <= candidate < N:
+            yield candidate
+        k = hmac_sha256(k, v + b"\x00")
+        v = hmac_sha256(k, v)
+
+
+def hmac_sha256(key: bytes, data: bytes) -> bytes:
+    import hmac
+
+    return hmac.new(key, data, hashlib.sha256).digest()
+
+
+def _modinv(a: int, n: int) -> int:
+    return pow(a, -1, n)
+
+
+def _point_add(p1, p2):
     if p1 is None:
         return p2
     if p2 is None:
@@ -34,82 +84,47 @@ def point_add(p1: tuple[int, int] | None, p2: tuple[int, int] | None) -> tuple[i
     if x1 == x2 and (y1 + y2) % P == 0:
         return None
     if p1 == p2:
-        if y1 == 0:
-            return None
-        s = (3 * x1 * x1 + A) * _modinv(2 * y1, P) % P
+        m = (3 * x1 * x1) * _modinv(2 * y1 % P, P) % P
     else:
-        s = (y2 - y1) * _modinv(x2 - x1, P) % P
-    x3 = (s * s - x1 - x2) % P
-    y3 = (s * (x1 - x3) - y1) % P
+        m = (y2 - y1) * _modinv((x2 - x1) % P, P) % P
+    x3 = (m * m - x1 - x2) % P
+    y3 = (m * (x1 - x3) - y1) % P
     return x3, y3
 
 
-def point_mul(k: int, point: tuple[int, int] = G) -> tuple[int, int] | None:
-    k %= N
-    if k == 0:
-        return None
+def _point_mul(k: int, point):
     result = None
     addend = point
     while k:
         if k & 1:
-            result = point_add(result, addend)
-        addend = point_add(addend, addend)
+            result = _point_add(result, addend)
+        addend = _point_add(addend, addend)
         k >>= 1
+    if result is None:
+        raise RuntimeError("invalid scalar multiplication")
     return result
 
 
-def privkey_to_pubkey(priv: bytes, compressed: bool = True) -> bytes:
-    k = int.from_bytes(priv, "big")
-    if k <= 0 or k >= N:
-        raise ValueError("invalid private key")
-    pt = point_mul(k)
-    if pt is None:
-        raise ValueError("invalid private key point")
-    x, y = pt
-    xb = x.to_bytes(32, "big")
-    if compressed:
-        return bytes([2 + (y & 1)]) + xb
-    return b"\x04" + xb + y.to_bytes(32, "big")
+def _encode_der(r: int, s: int) -> bytes:
+    def enc_int(x: int) -> bytes:
+        xb = x.to_bytes(32, "big")
+        while len(xb) > 1 and xb[0] == 0 and (xb[1] & 0x80) == 0:
+            xb = xb[1:]
+        if xb[0] & 0x80:
+            xb = b"\x00" + xb
+        return b"\x02" + bytes([len(xb)]) + xb
 
-
-def sign(priv: bytes, digest32: bytes, low_s: bool = True) -> bytes:
-    if len(digest32) != 32:
-        raise ValueError("digest must be 32 bytes")
-    d = int.from_bytes(priv, "big")
-    z = int.from_bytes(digest32, "big")
-    for _ in range(64):
-        k_bytes = hashlib.sha256(priv + digest32 + struct.pack("<I", _)).digest()
-        k = int.from_bytes(k_bytes, "big") % N
-        if k == 0:
-            continue
-        r_pt = point_mul(k)
-        if r_pt is None:
-            continue
-        r = r_pt[0] % N
-        if r == 0:
-            continue
-        s = (_modinv(k, N) * (z + r * d)) % N
-        if s == 0:
-            continue
-        if low_s and s > N // 2:
-            s = N - s
-
-        def _enc_int(x: int) -> bytes:
-            xb = x.to_bytes(32, "big")
-            while len(xb) > 1 and xb[0] == 0 and (xb[1] & 0x80) == 0:
-                xb = xb[1:]
-            if xb[0] & 0x80:
-                xb = b"\x00" + xb
-            return b"\x02" + bytes([len(xb)]) + xb
-
-        payload = _enc_int(r) + _enc_int(s)
-        return b"\x30" + bytes([len(payload)]) + payload
-    raise RuntimeError("signing failed")
+    payload = enc_int(r) + enc_int(s)
+    return b"\x30" + bytes([len(payload)]) + payload
 
 
 def ripemd160(data: bytes) -> bytes:
-    # OpenSSL is available on macOS; fallback keeps wallet usable without extra deps.
-    import subprocess
+    try:
+        h = hashlib.new("ripemd160")
+        h.update(data)
+        return h.digest()
+    except (ValueError, TypeError):
+        pass
 
     p = subprocess.run(
         ["openssl", "dgst", "-ripemd160", "-binary"],
@@ -124,8 +139,3 @@ def ripemd160(data: bytes) -> bytes:
 
 def hash160(data: bytes) -> bytes:
     return ripemd160(hashlib.sha256(data).digest())
-
-
-def tagged_hash(tag: str, msg: bytes) -> bytes:
-    tag_hash = hashlib.sha256(tag.encode()).digest()
-    return hashlib.sha256(tag_hash + tag_hash + msg).digest()

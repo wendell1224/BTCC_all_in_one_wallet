@@ -1,6 +1,6 @@
-# BTCC All-in-One Wallet (macOS)
+# BTCC Wallet (macOS)
 
-Bitcoin Classic (BTCC) **all-in-one macOS client**: mnemonic wallet + pool hashrate dashboard + Apple Silicon GPU mining in one SwiftUI app.
+Bitcoin Classic (BTCC) **all-in-one macOS client**: mnemonic wallet, transfers, on-chain history, OTC market overview, pool hashrate dashboard, and Apple Silicon GPU mining in one SwiftUI app.
 
 > Evolved from [BTCC_apple-gpu-miner](https://github.com/wendell1224/BTCC_apple-gpu-miner) GUI — **wallet-first** product positioning.
 
@@ -13,6 +13,9 @@ Bitcoin Classic (BTCC) **all-in-one macOS client**: mnemonic wallet + pool hashr
 | Tab | What it does |
 |-----|--------------|
 | **Wallet** | BIP39 create/import, cc1 address, balance, send BTCC |
+| **Transfer** | Supports Native SegWit, Taproot, Legacy, and P2SH recipients; optional memo; TXID and explorer link after broadcast |
+| **History** | Paginated wallet history from explorer API with action, amount, height, time, and explorer link |
+| **OTC** | Latest OTC price, 24h change, volume, turnover, and total market stats |
 | **Pool stats** | Miner hashrate & pending payout from pool.btc-classic.org API |
 | **Pool mining** | Stratum v1 GPU mining with optional proxy |
 | **Solo** | Mine against your own node via RPC |
@@ -29,12 +32,30 @@ Bitcoin Classic (BTCC) **all-in-one macOS client**: mnemonic wallet + pool hashr
 
 Install: open DMG → drag **BTCC Wallet** to Applications → launch from Applications.
 
+Build only the `.app` bundle:
+
+```bash
+./scripts/build_dmg.sh --app-only --skip-metal
+```
+
+The local build uses ad-hoc signing by default. For smooth double-click distribution on modern macOS, sign with an Apple Developer ID certificate and notarize the app.
+
 ## Wallet
 
 - Derivation: BIP84 `m/84'/0'/0'/0/0` → `cc1...` addresses
-- Mnemonic stored in macOS Keychain (device-only)
+- Mnemonic stored locally at `~/Library/Application Support/BTCCWallet/wallet.json` (no system Keychain)
 - Balance / UTXO / broadcast via [api.btc-classic.org](https://api.btc-classic.org)
-- **Use for mining** button fills your wallet address into the pool tab
+- Transaction history and explorer links via [explorer.btc-classic.org](https://explorer.btc-classic.org/)
+- Recipient address support: `cc1q...`, `cc1p...`, `1...`, `3...`
+- Optional memo is encoded as an OP_RETURN output
+
+## OTC
+
+The **OTC** tab displays current market stats from:
+
+`GET https://otc.btc-classic.org/otc/api/stats/overview`
+
+It shows latest price, 24h change, 24h trade count, total trade count, BTCC volume, and USDT turnover.
 
 ## Pool stats API
 

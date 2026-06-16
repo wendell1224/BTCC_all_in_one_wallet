@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import struct
 
-from .secp256k1_min import N, point_mul, privkey_to_pubkey
+from .secp256k1_min import N, privkey_to_pubkey
 
 HARDENED = 0x80000000
 
@@ -53,7 +53,10 @@ class HDKey:
       data = privkey_to_pubkey(self.priv, compressed=True) + struct.pack(">I", index)
     i = hmac.new(self.chain, data, hashlib.sha512).digest()
     il, ir = i[:32], i[32:]
-    ki = (int.from_bytes(il, "big") + int.from_bytes(self.priv, "big")) % N
+    il_int = int.from_bytes(il, "big")
+    if il_int >= N:
+      raise ValueError("invalid child derivation (IL >= n)")
+    ki = (il_int + int.from_bytes(self.priv, "big")) % N
     if ki == 0:
       raise ValueError("invalid child key")
     parent_fp = self.fingerprint()

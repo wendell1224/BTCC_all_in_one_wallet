@@ -47,6 +47,7 @@ enum AppPaths {
         appRoot.appendingPathComponent("tests/smoke_metal_nonce_finder.py")
     }
     static var walletTool: URL { srcDir.appendingPathComponent("wallet_tool.py") }
+    static var walletStore: URL { supportDir.appendingPathComponent("wallet.json") }
 
     /// GPU binary used for mining: bundled copy if executable, else user-writable copy.
     static var gpuBinary: URL {

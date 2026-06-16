@@ -1,6 +1,24 @@
 import Foundation
 import Combine
 
+private final class LockedLines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+
+    func append(contentsOf lines: [String]) {
+        lock.lock()
+        storage.append(contentsOf: lines)
+        lock.unlock()
+    }
+
+    func snapshot() -> [String] {
+        lock.lock()
+        let lines = storage
+        lock.unlock()
+        return lines
+    }
+}
+
 @MainActor
 final class MinerRunner: ObservableObject {
     @Published var logText = ""
@@ -84,13 +102,11 @@ final class MinerRunner: ObservableObject {
             proc.standardOutput = outPipe
             proc.standardError = outPipe
 
-            var lines: [String] = []
+            let lines = LockedLines()
             outPipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 guard !data.isEmpty, let chunk = String(data: data, encoding: .utf8) else { return }
-                for line in chunk.split(separator: "\n", omittingEmptySubsequences: false) {
-                    lines.append(String(line))
-                }
+                lines.append(contentsOf: chunk.split(separator: "\n", omittingEmptySubsequences: false).map(String.init))
             }
 
             do {
@@ -102,7 +118,7 @@ final class MinerRunner: ObservableObject {
 
             proc.waitUntilExit()
             outPipe.fileHandleForReading.readabilityHandler = nil
-            return BashResult(ok: proc.terminationStatus == 0, lines: lines, exitCode: proc.terminationStatus)
+            return BashResult(ok: proc.terminationStatus == 0, lines: lines.snapshot(), exitCode: proc.terminationStatus)
         }.value
     }
 
@@ -296,18 +312,18 @@ final class MinerRunner: ObservableObject {
         statusMessage = "挖矿中…"
 
         // waitUntilExit MUST run off the main thread
-        waitTask = Task.detached { [weak self] in
-            proc.waitUntilExit()
-            let rc = proc.terminationStatus
-            await MainActor.run {
-                guard let self else { return }
-                outPipe.fileHandleForReading.readabilityHandler = nil
-                self.process = nil
-                self.isRunning = false
-                self.statusMessage = "就绪"
-                self.appendLog("[gui] 进程结束 (exit=\(rc))")
-                self.refreshGPUStatus()
-            }
+        waitTask = Task { [weak self] in
+            let rc = await Task.detached {
+                proc.waitUntilExit()
+                return proc.terminationStatus
+            }.value
+            guard let self else { return }
+            outPipe.fileHandleForReading.readabilityHandler = nil
+            self.process = nil
+            self.isRunning = false
+            self.statusMessage = "就绪"
+            self.appendLog("[gui] 进程结束 (exit=\(rc))")
+            self.refreshGPUStatus()
         }
     }
 

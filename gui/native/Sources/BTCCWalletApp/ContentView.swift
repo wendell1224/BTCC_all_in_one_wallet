@@ -2,36 +2,58 @@ import SwiftUI
 import AppKit
 
 struct ContentView: View {
+    private enum MainTab: Hashable {
+        case wallet, otc, poolStats, stratum, solo, tools
+    }
+
     @EnvironmentObject var runner: MinerRunner
     @StateObject private var settings = MinerSettings()
     @StateObject private var wallet = WalletManager()
     @StateObject private var poolStats = PoolStatsManager()
+    @StateObject private var otcStats = OTCStatsManager()
 
     @State private var importMnemonic = ""
     @State private var sendTo = ""
     @State private var sendAmount = ""
+    @State private var sendMemo = ""
     @State private var showMnemonicSheet = false
     @State private var createdMnemonic = ""
+    @State private var selectedTab: MainTab = .wallet
 
     var body: some View {
         VStack(spacing: 0) {
             statusBar
             Divider()
-            TabView {
+            TabView(selection: $selectedTab) {
                 walletTab
                     .tabItem { Label("钱包", systemImage: "wallet.pass") }
+                    .tag(MainTab.wallet)
+                otcTab
+                    .tabItem { Label("OTC", systemImage: "chart.bar.xaxis") }
+                    .tag(MainTab.otc)
                 poolStatsTab
                     .tabItem { Label("矿池算力", systemImage: "chart.line.uptrend.xyaxis") }
+                    .tag(MainTab.poolStats)
                 stratumTab
                     .tabItem { Label("矿池挖矿", systemImage: "network") }
+                    .tag(MainTab.stratum)
                 soloTab
                     .tabItem { Label("Solo", systemImage: "server.rack") }
+                    .tag(MainTab.solo)
                 toolsTab
                     .tabItem { Label("工具", systemImage: "wrench.and.screwdriver") }
+                    .tag(MainTab.tools)
             }
             .padding(12)
-            Divider()
-            logPanel
+            if selectedTab == .wallet || selectedTab == .poolStats || selectedTab == .stratum {
+                Divider()
+                bottomPanel
+            }
+        }
+        .onChange(of: selectedTab) { tab in
+            if tab == .otc, otcStats.overview == nil, !otcStats.isLoading {
+                Task { await otcStats.refresh() }
+            }
         }
         .sheet(isPresented: $showMnemonicSheet) {
             mnemonicBackupSheet
@@ -205,6 +227,166 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - OTC
+
+    private var otcTab: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            otcToolbar
+
+            if !otcStats.errorMessage.isEmpty {
+                Label(otcStats.errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+
+            if let overview = otcStats.overview {
+                otcOverviewPanel(overview)
+                otcMetricGrid(overview)
+            } else {
+                otcEmptyPanel
+            }
+
+            Spacer(minLength: 0)
+        }
+        .task {
+            if otcStats.overview == nil, !otcStats.isLoading {
+                await otcStats.refresh()
+            }
+        }
+    }
+
+    private var otcToolbar: some View {
+        HStack(spacing: 10) {
+            Label("OTC 行情", systemImage: "chart.bar.xaxis")
+                .font(.headline)
+            Text("otc.btc-classic.org")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Spacer()
+
+            if !otcStats.lastUpdated.isEmpty {
+                Text("更新 \(otcStats.lastUpdated)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Link(destination: URL(string: "https://otc.btc-classic.org/otc/")!) {
+                Label("打开 OTC", systemImage: "safari")
+            }
+            .buttonStyle(.borderless)
+
+            Button(action: { Task { await otcStats.refresh() } }) {
+                if otcStats.isLoading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("刷新", systemImage: "arrow.clockwise")
+                }
+            }
+            .disabled(otcStats.isLoading)
+        }
+    }
+
+    private func otcOverviewPanel(_ overview: OTCOverview) -> some View {
+        HStack(alignment: .center, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("最新成交价")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(formatDecimal(overview.lastPrice, digits: 4))
+                        .font(.system(size: 34, weight: .semibold, design: .rounded))
+                    Text(overview.lastToken)
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Divider()
+                .frame(height: 56)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Label("24h \(formatSignedDecimal(overview.priceChange24h, digits: 2))%", systemImage: overview.priceChange24h >= 0 ? "arrow.up.right" : "arrow.down.right")
+                    .font(.headline)
+                    .foregroundColor(otcChangeColor(overview.priceChange24h))
+                Text("24h 成交 \(formatDecimal(overview.volume24h, digits: 2)) BTCC")
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(.secondary)
+                Text("成交额 \(formatDecimal(overview.volumeUSDT24h, digits: 2)) USDT")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.7), lineWidth: 1)
+        )
+    }
+
+    private func otcMetricGrid(_ overview: OTCOverview) -> some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10)
+            ],
+            spacing: 10
+        ) {
+            OTCMetricTile(title: "24h 成交笔数", value: "\(overview.count24h)", subtitle: "最近 24 小时", icon: "number")
+            OTCMetricTile(title: "总成交笔数", value: "\(overview.totalCount)", subtitle: "累计订单", icon: "sum")
+            OTCMetricTile(title: "24h 成交量", value: formatDecimal(overview.volume24h, digits: 2), subtitle: "BTCC", icon: "bitcoinsign.circle")
+            OTCMetricTile(title: "总成交量", value: formatDecimal(overview.totalVolume, digits: 2), subtitle: "BTCC", icon: "chart.pie")
+            OTCMetricTile(title: "24h 成交额", value: formatDecimal(overview.volumeUSDT24h, digits: 2), subtitle: "USDT", icon: "dollarsign.circle")
+            OTCMetricTile(title: "总成交额", value: formatDecimal(overview.volumeUSDTTotal, digits: 2), subtitle: "USDT", icon: "banknote")
+        }
+    }
+
+    private var otcEmptyPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                if otcStats.isLoading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "chart.bar.doc.horizontal")
+                        .foregroundColor(.secondary)
+                }
+                Text(otcStats.isLoading ? "加载 OTC 数据…" : "暂无 OTC 数据")
+                    .foregroundColor(.secondary)
+            }
+            Button("刷新") {
+                Task { await otcStats.refresh() }
+            }
+            .disabled(otcStats.isLoading)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+    }
+
+    private func otcChangeColor(_ value: Double) -> Color {
+        if value > 0 { return .green }
+        if value < 0 { return .red }
+        return .secondary
+    }
+
+    private func formatDecimal(_ value: Double, digits: Int) -> String {
+        String(format: "%.\(digits)f", value)
+    }
+
+    private func formatSignedDecimal(_ value: Double, digits: Int) -> String {
+        let prefix = value > 0 ? "+" : ""
+        return prefix + formatDecimal(value, digits: digits)
+    }
+
     // MARK: - Wallet
 
     private var walletTab: some View {
@@ -252,26 +434,49 @@ struct ContentView: View {
 
             Text("转账").font(.headline)
             FormRow(label: "收款地址") {
-                TextField("cc1q...", text: $sendTo).textFieldStyle(.roundedBorder)
+                TextField("cc1 / 1 / 3 地址", text: $sendTo).textFieldStyle(.roundedBorder)
             }
             FormRow(label: "金额 (BTCC)") {
                 TextField("0.001", text: $sendAmount).textFieldStyle(.roundedBorder).frame(width: 160)
             }
+            FormRow(label: "备注") {
+                TextField("可选", text: $sendMemo).textFieldStyle(.roundedBorder)
+            }
             HStack(spacing: 10) {
                 Button("发送") {
-                    Task { await wallet.send(to: sendTo, amountBTCC: sendAmount) }
+                    Task { await wallet.send(to: sendTo, amountBTCC: sendAmount, memo: sendMemo) }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(wallet.isBusy || sendTo.isEmpty || sendAmount.isEmpty)
-
-                Button("用于挖矿") { settings.address = wallet.address }
-                    .disabled(wallet.address.isEmpty)
 
                 Button("删除钱包", role: .destructive) { wallet.deleteWallet() }
             }
 
             Text(wallet.statusMessage).font(.caption).foregroundColor(.secondary)
+
+            if !wallet.lastTxid.isEmpty {
+                txResultView
+            }
         }
+    }
+
+    private var txResultView: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("交易 ID").font(.caption).foregroundColor(.secondary)
+            Text(wallet.lastTxid)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+            HStack(spacing: 10) {
+                Button("复制 TXID") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(wallet.lastTxid, forType: .string)
+                }
+                if let url = wallet.lastTxExplorerURL {
+                    Link("区块浏览器", destination: url)
+                }
+            }
+        }
+        .padding(.top, 4)
     }
 
     private var walletCreateImport: some View {
@@ -409,7 +614,149 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Log
+    // MARK: - Bottom Panels
+
+    @ViewBuilder
+    private var bottomPanel: some View {
+        switch selectedTab {
+        case .wallet:
+            walletHistoryPanel
+        case .poolStats, .stratum:
+            logPanel
+        case .otc, .solo, .tools:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var walletHistoryPanel: some View {
+        let page = wallet.historyPage()
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("钱包历史")
+                    .font(.headline)
+                Spacer()
+                Text("\(page.total) 笔  \(page.page + 1)/\(page.pageCount)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if wallet.isHistoryLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Stepper(
+                    "",
+                    value: Binding(
+                        get: { wallet.historyPageSize },
+                        set: { newValue in
+                            Task { await wallet.setHistoryPageSize(newValue) }
+                        }
+                    ),
+                    in: 5...50,
+                    step: 5
+                )
+                    .labelsHidden()
+                    .frame(width: 90)
+                    .disabled(wallet.isHistoryLoading)
+                Button("上一页") { Task { await wallet.historyPrevPage() } }
+                    .buttonStyle(.borderless)
+                    .disabled(wallet.isHistoryLoading || page.page == 0)
+                Button("下一页") { Task { await wallet.historyNextPage() } }
+                    .buttonStyle(.borderless)
+                    .disabled(wallet.isHistoryLoading || page.page + 1 >= page.pageCount)
+                Button("刷新") { Task { await wallet.refreshHistory() } }
+                    .buttonStyle(.borderless)
+                    .disabled(wallet.isHistoryLoading || wallet.address.isEmpty)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    if wallet.isHistoryLoading && wallet.transactionHistory.isEmpty {
+                        Text("加载中…")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if wallet.transactionHistory.isEmpty {
+                        Text(wallet.hasWallet ? "暂无交易记录" : "未创建钱包")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ForEach(page.items) { tx in
+                            HStack(spacing: 10) {
+                                Text(tx.action)
+                                    .font(.caption.bold())
+                                    .frame(width: 48, alignment: .leading)
+                                    .foregroundColor(historyActionColor(tx.action))
+                                Text(historyAmountText(tx))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .frame(width: 132, alignment: .trailing)
+                                    .foregroundColor(historyAmountColor(tx))
+                                Text(tx.height.map { "#\($0)" } ?? "未确认")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .frame(width: 72, alignment: .leading)
+                                    .foregroundColor(.secondary)
+                                Text(historyTimeText(tx))
+                                    .font(.system(.caption, design: .monospaced))
+                                    .frame(width: 118, alignment: .leading)
+                                    .foregroundColor(.secondary)
+                                Text(tx.txid)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .textSelection(.enabled)
+                                Spacer()
+                                if let url = URL(string: "https://explorer.btc-classic.org/tx/\(tx.txid)") {
+                                    Link("浏览", destination: url)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(8)
+            }
+            .background(Color(nsColor: .textBackgroundColor))
+            .cornerRadius(6)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        }
+        .frame(minHeight: 180, maxHeight: 260)
+    }
+
+    private func historyAmountText(_ tx: WalletManager.TransactionRecord) -> String {
+        guard tx.action != "未知" else { return "--" }
+        let prefix = tx.amountSats > 0 ? "+" : ""
+        return prefix + BTCCApiClient.formatBTCC(tx.amountSats)
+    }
+
+    private func historyAmountColor(_ tx: WalletManager.TransactionRecord) -> Color {
+        if tx.amountSats > 0 { return .green }
+        if tx.amountSats < 0 { return .red }
+        return .secondary
+    }
+
+    private func historyActionColor(_ action: String) -> Color {
+        switch action {
+        case "收到":
+            return .green
+        case "转账":
+            return .red
+        case "自转账":
+            return .orange
+        default:
+            return .secondary
+        }
+    }
+
+    private func historyTimeText(_ tx: WalletManager.TransactionRecord) -> String {
+        guard let timeISO = tx.timeISO, !timeISO.isEmpty else { return "—" }
+        return timeISO
+            .replacingOccurrences(of: "T", with: " ")
+            .replacingOccurrences(of: "Z", with: "")
+            .prefix(16)
+            .description
+    }
 
     private var logPanel: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -454,5 +801,49 @@ struct FormRow<Content: View>: View {
                 .frame(width: 140, alignment: .trailing)
             content
         }
+    }
+}
+
+struct OTCMetricTile: View {
+    let title: String
+    let value: String
+    let subtitle: String
+    let icon: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.accentColor)
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.accentColor.opacity(0.12))
+                )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Text(value)
+                    .font(.system(.headline, design: .monospaced))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: .textBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.55), lineWidth: 1)
+        )
     }
 }
