@@ -38,6 +38,30 @@ struct PoolMinerStats: Codable {
     }
 }
 
+struct PoolTopMiner: Decodable, Identifiable {
+    let address: String
+    let workerCount: Int
+    let hashrate1hr: String
+    let hashrate1d: String
+    let hashrate7d: String
+    let bestShare: String?
+    let bestEver: String?
+
+    var id: String { address }
+
+    var hashrate1hrValue: Double {
+        Double(hashrate1hr) ?? 0
+    }
+
+    var hashrate1dValue: Double {
+        Double(hashrate1d) ?? 0
+    }
+
+    var hashrate7dValue: Double {
+        Double(hashrate7d) ?? 0
+    }
+}
+
 struct WalletBalance: Codable {
     let address: String?
     let confirmed: Int64?
@@ -143,6 +167,18 @@ enum BTCCApiClient {
             throw URLError(.badServerResponse)
         }
         return try JSONDecoder().decode(PoolMinerStats.self, from: data)
+    }
+
+    static func fetchPoolTopMiners(perfMode: String = "Day") async throws -> [PoolTopMiner] {
+        let url = URL(string: "\(poolBase)/api/solo/top/hashrates")!
+        var req = URLRequest(url: url, timeoutInterval: 20)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("BTCCWallet/1.0", forHTTPHeaderField: "User-Agent")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode([PoolTopMiner].self, from: data)
     }
 
     static func fetchBalance(address: String) async throws -> WalletBalance {

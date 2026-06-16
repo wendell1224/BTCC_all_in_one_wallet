@@ -401,13 +401,29 @@ final class WalletManager: ObservableObject {
 
 @MainActor
 final class PoolStatsManager: ObservableObject {
+    struct TopMinerRow: Identifiable {
+        let rank: Int
+        let address: String
+        let workers: String
+        let hashrate1hr: String
+        let hashrate1d: String
+        let hashrate7d: String
+        let bestShare: String
+
+        var id: String { address }
+    }
+
     @Published var isLoading = false
+    @Published var isRankingLoading = false
     @Published var errorMessage = ""
+    @Published var rankingErrorMessage = ""
     @Published var totalHashrate = "—"
     @Published var pendingBalance = "—"
     @Published var pendingShares = "—"
     @Published var workers: [(name: String, hashrate: String, sps: String)] = []
     @Published var samples: [(time: String, hashrate: String)] = []
+    @Published var topMiners: [TopMinerRow] = []
+    @Published var rankingUpdatedAt = ""
 
     func refresh(address: String) async {
         let addr = address.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -440,6 +456,43 @@ final class PoolStatsManager: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func refreshRanking() async {
+        isRankingLoading = true
+        rankingErrorMessage = ""
+        defer { isRankingLoading = false }
+        do {
+            let miners = try await BTCCApiClient.fetchPoolTopMiners()
+            topMiners = miners.prefix(50).enumerated().map { index, miner in
+                TopMinerRow(
+                    rank: index + 1,
+                    address: miner.address,
+                    workers: "\(miner.workerCount)",
+                    hashrate1hr: BTCCApiClient.formatHashrate(miner.hashrate1hrValue),
+                    hashrate1d: BTCCApiClient.formatHashrate(miner.hashrate1dValue),
+                    hashrate7d: BTCCApiClient.formatHashrate(miner.hashrate7dValue),
+                    bestShare: Self.formatShare(miner.bestShare)
+                )
+            }
+            rankingUpdatedAt = Self.timeString(Date())
+        } catch {
+            rankingErrorMessage = error.localizedDescription
+        }
+    }
+
+    private static func timeString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: date)
+    }
+
+    private static func formatShare(_ value: String?) -> String {
+        guard let value, let number = Double(value) else { return "—" }
+        if number >= 1_000_000_000 { return String(format: "%.2fB", number / 1_000_000_000) }
+        if number >= 1_000_000 { return String(format: "%.2fM", number / 1_000_000) }
+        if number >= 1_000 { return String(format: "%.2fk", number / 1_000) }
+        return String(format: "%.2f", number)
     }
 }
 

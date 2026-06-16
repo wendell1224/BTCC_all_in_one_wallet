@@ -16,7 +16,7 @@ Bitcoin Classic (BTCC) **all-in-one macOS client**: mnemonic wallet, transfers, 
 | **Transfer** | Supports Native SegWit, Taproot, Legacy, and P2SH recipients; optional memo; TXID and explorer link after broadcast |
 | **History** | Paginated wallet history from explorer API with action, amount, height, time, and explorer link |
 | **OTC** | Latest OTC price, 24h change, volume, turnover, and total market stats |
-| **Pool stats** | Miner hashrate & pending payout from pool.btc-classic.org API |
+| **Pool stats** | Miner hashrate, pending payout, worker samples, and current hashrate leaderboard from pool.btc-classic.org API |
 | **Pool mining** | Stratum v1 GPU mining with optional proxy |
 | **Solo** | Mine against your own node via RPC |
 | **Tools** | Build Metal helper, smoke test, proxy test |
@@ -60,6 +60,10 @@ It shows latest price, 24h change, 24h trade count, total trade count, BTCC volu
 ## Pool stats API
 
 `GET pool.btc-classic.org/api/pplns/pools/btcc-pplns/miners/{address}?perfMode=Day`
+
+The Pool Stats tab also shows the current Solo hashrate leaderboard with full address, worker count, 1h/1d/7d hashrate, and best share:
+
+`GET pool.btc-classic.org/api/solo/top/hashrates`
 
 ## vs BTCC_apple-gpu-miner
 

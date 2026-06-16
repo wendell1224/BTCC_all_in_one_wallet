@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var showMnemonicSheet = false
     @State private var createdMnemonic = ""
     @State private var selectedTab: MainTab = .wallet
+    @State private var copiedMinerAddress = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,6 +54,9 @@ struct ContentView: View {
         .onChange(of: selectedTab) { tab in
             if tab == .otc, otcStats.overview == nil, !otcStats.isLoading {
                 Task { await otcStats.refresh() }
+            }
+            if tab == .poolStats, poolStats.topMiners.isEmpty, !poolStats.isRankingLoading {
+                Task { await poolStats.refreshRanking() }
             }
         }
         .sheet(isPresented: $showMnemonicSheet) {
@@ -215,7 +219,156 @@ struct ContentView: View {
                 }
             }
 
+            Divider().padding(.vertical, 4)
+
+            poolRankingPanel
+
             Spacer()
+        }
+    }
+
+    private var poolRankingPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Text("算力排行榜")
+                    .font(.headline)
+                Text("Solo Top")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Color.accentColor.opacity(0.12))
+                    .foregroundColor(.accentColor)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                if !poolStats.rankingUpdatedAt.isEmpty {
+                    Text("更新 \(poolStats.rankingUpdatedAt)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Button(action: { Task { await poolStats.refreshRanking() } }) {
+                    if poolStats.isRankingLoading {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("刷新排行", systemImage: "arrow.clockwise")
+                    }
+                }
+                .disabled(poolStats.isRankingLoading)
+            }
+
+            if !poolStats.rankingErrorMessage.isEmpty {
+                Text(poolStats.rankingErrorMessage)
+                    .foregroundColor(.red)
+                    .font(.caption)
+            }
+
+            VStack(spacing: 0) {
+                HStack {
+                    Text("#").frame(width: 34, alignment: .leading)
+                    Text("矿工地址")
+                    Spacer()
+                    Text("Worker").frame(width: 52, alignment: .trailing)
+                    Text("1h").frame(width: 100, alignment: .trailing)
+                    Text("1d").frame(width: 100, alignment: .trailing)
+                    Text("7d").frame(width: 100, alignment: .trailing)
+                    Text("Best").frame(width: 76, alignment: .trailing)
+                }
+                .font(.caption.bold())
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+
+                Divider()
+
+                if poolStats.isRankingLoading && poolStats.topMiners.isEmpty {
+                    Text("加载排行榜…")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                } else if poolStats.topMiners.isEmpty {
+                    Text("暂无排行榜数据")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                } else {
+                    ForEach(poolStats.topMiners) { row in
+                        poolRankingRow(row)
+                        if row.id != poolStats.topMiners.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .task {
+            if poolStats.topMiners.isEmpty && !poolStats.isRankingLoading {
+                await poolStats.refreshRanking()
+            }
+        }
+    }
+
+    private func poolRankingRow(_ row: PoolStatsManager.TopMinerRow) -> some View {
+        HStack(spacing: 8) {
+            Text("\(row.rank)")
+                .font(.system(.caption, design: .monospaced).bold())
+                .foregroundColor(rankingColor(row.rank))
+                .frame(width: 34, alignment: .leading)
+            Button(action: { copyMinerAddress(row.address) }) {
+                Text(row.address)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .buttonStyle(.plain)
+            .help("点击复制: \(row.address)")
+            if copiedMinerAddress == row.address {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                    .font(.caption)
+                    .help("已复制")
+            }
+            Spacer()
+            Text(row.workers)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 52, alignment: .trailing)
+            Text(row.hashrate1hr)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 100, alignment: .trailing)
+            Text(row.hashrate1d)
+                .font(.system(.caption, design: .monospaced))
+                .frame(width: 100, alignment: .trailing)
+            Text(row.hashrate7d)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 100, alignment: .trailing)
+            Text(row.bestShare)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 76, alignment: .trailing)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+    }
+
+    private func copyMinerAddress(_ address: String) {
+        settings.address = address
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(address, forType: .string)
+        copiedMinerAddress = address
+    }
+
+    private func rankingColor(_ rank: Int) -> Color {
+        switch rank {
+        case 1: return .orange
+        case 2: return .secondary
+        case 3: return .brown
+        default: return .primary
         }
     }
 
