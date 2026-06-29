@@ -297,6 +297,28 @@ code,
   max-width: 72px;
 }
 
+.power-row {
+  grid-template-columns: 112px minmax(0, 1fr);
+}
+
+.power-control {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 180px) 46px minmax(90px, auto);
+  align-items: center;
+  gap: 10px;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.checkbox-label input {
+  width: auto;
+}
+
 .actions.large {
   margin-top: 14px;
 }

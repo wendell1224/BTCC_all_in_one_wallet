@@ -4,6 +4,8 @@ import {
   buildBlockHeader,
   buildJob,
   diffToTarget,
+  gpuThrottleSleepMs,
+  normalizeGpuDutyPercent,
   parsePoolURL,
   parseProxyUrl,
   stratumPrevhashToLe32,
@@ -24,6 +26,16 @@ test('parsePoolURL and parseProxyUrl normalize inputs', () => {
     username: 'u',
     password: 'p'
   });
+});
+
+test('low-power mining helpers clamp duty cycle and compute idle time', () => {
+  assert.equal(normalizeGpuDutyPercent({ lowPowerMining: false, miningDutyPercent: 5 }), 100);
+  assert.equal(normalizeGpuDutyPercent({ lowPowerMining: true, miningDutyPercent: 1 }), 5);
+  assert.equal(normalizeGpuDutyPercent({ lowPowerMining: true, miningDutyPercent: 250 }), 100);
+  assert.equal(normalizeGpuDutyPercent({ lowPowerMining: 'true', miningDutyPercent: '10' }), 10);
+  assert.equal(gpuThrottleSleepMs({ dutyPercent: 100, elapsedMs: 250 }), 0);
+  assert.equal(gpuThrottleSleepMs({ dutyPercent: 10, elapsedMs: 250 }), 2250);
+  assert.equal(gpuThrottleSleepMs({ dutyPercent: 50, elapsedMs: 250 }), 250);
 });
 
 test('stratum helpers preserve protocol byte order', () => {

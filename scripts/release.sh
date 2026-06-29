@@ -35,10 +35,6 @@ TAG="v${VERSION}"
 NOTES="$REPO_ROOT/docs/releases/${TAG}.md"
 ELECTRON_DIST="$REPO_ROOT/dist/electron"
 DMG="$ELECTRON_DIST/BTCC Wallet-${VERSION}-arm64.dmg"
-ZIP="$ELECTRON_DIST/BTCC Wallet-${VERSION}-arm64-mac.zip"
-DMG_BLOCKMAP="$DMG.blockmap"
-ZIP_BLOCKMAP="$ZIP.blockmap"
-LATEST="$ELECTRON_DIST/latest-mac.yml"
 
 echo "[release] version: ${VERSION}  tag: ${TAG}"
 
@@ -55,13 +51,8 @@ if [[ ! -f "$DMG" ]]; then
     echo "[release] error: expected Electron DMG missing: $DMG"
     exit 1
 fi
-if [[ ! -f "$ZIP" ]]; then
-    echo "[release] error: expected Electron ZIP missing: $ZIP"
-    exit 1
-fi
-
-echo "[release] built assets:"
-ls -lh "$DMG" "$ZIP"
+echo "[release] built asset:"
+ls -lh "$DMG"
 
 if [[ "$BUILD_ONLY" -eq 1 ]]; then
     echo "[release] done (--build-only)"
@@ -79,11 +70,11 @@ if [[ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null)" ]]; then
 fi
 
 if gh release view "$TAG" >/dev/null 2>&1; then
-    echo "[release] release ${TAG} exists — uploading/replacing assets ..."
-    gh release upload "$TAG" "$DMG" "$ZIP" "$DMG_BLOCKMAP" "$ZIP_BLOCKMAP" "$LATEST" --clobber
+    echo "[release] release ${TAG} exists — uploading/replacing DMG asset ..."
+    gh release upload "$TAG" "$DMG" --clobber
 else
     echo "[release] creating GitHub release ${TAG} ..."
-    gh release create "$TAG" "$DMG" "$ZIP" "$DMG_BLOCKMAP" "$ZIP_BLOCKMAP" "$LATEST" \
+    gh release create "$TAG" "$DMG" \
         --title "BTCC Wallet ${TAG}" \
         --notes-file "$NOTES"
 fi

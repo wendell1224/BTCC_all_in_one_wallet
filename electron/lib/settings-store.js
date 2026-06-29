@@ -8,6 +8,8 @@ const DEFAULTS = Object.freeze({
   poolURL: 'stratum+tcp://pool.btc-classic.org:63101',
   proxy: '',
   suggestDifficulty: '-1',
+  lowPowerMining: false,
+  miningDutyPercent: 10,
   rpcHost: '127.0.0.1',
   rpcPort: '28476',
   rpcUser: 'user',
@@ -37,7 +39,15 @@ export class SettingsStore {
     const current = this.getAll();
     const next = { ...current };
     for (const key of Object.keys(DEFAULTS)) {
-      if (Object.hasOwn(patch, key)) next[key] = String(patch[key] ?? '');
+      if (!Object.hasOwn(patch, key)) continue;
+      if (key === 'lowPowerMining') {
+        next[key] = Boolean(patch[key]);
+      } else if (key === 'miningDutyPercent') {
+        const value = Number(patch[key]);
+        next[key] = Number.isFinite(value) ? Math.min(100, Math.max(5, value)) : DEFAULTS[key];
+      } else {
+        next[key] = String(patch[key] ?? '');
+      }
     }
     const tmp = `${this.file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });

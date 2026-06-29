@@ -308,6 +308,26 @@ function formatDuration(seconds) {
   return `${(seconds / 86400).toFixed(1)}d`;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function normalizeGpuDutyPercent(settings = {}) {
+  const enabled = settings.lowPowerMining === true || settings.lowPowerMining === 'true';
+  if (!enabled) return 100;
+  const value = Number(settings.miningDutyPercent);
+  if (!Number.isFinite(value)) return 10;
+  return Math.min(100, Math.max(5, value));
+}
+
+export function gpuThrottleSleepMs({ dutyPercent, elapsedMs }) {
+  if (dutyPercent >= 100) return 0;
+  const duty = Math.min(100, Math.max(1, Number(dutyPercent))) / 100;
+  const active = Math.max(0, Number(elapsedMs));
+  if (active <= 0) return 0;
+  return active * ((1 / duty) - 1);
+}
+
 export class StratumMiner extends EventEmitter {
   constructor({ settings, gpuBinary, useGpu = true }) {
     super();
@@ -363,6 +383,10 @@ export class StratumMiner extends EventEmitter {
 
     if (this.useGpu) {
       this.helper = new MetalGpuHelper(this.gpuBinary, { onLog: (line) => this.log(line) });
+    }
+    const dutyPercent = normalizeGpuDutyPercent(this.settings);
+    if (dutyPercent < 100) {
+      this.log(`[stratum] low-power online mode: GPU duty ${dutyPercent}%`);
     }
 
     const sub = await this.call('mining.subscribe', ['btcc-electron-miner/0.1'], 15000);
@@ -483,7 +507,8 @@ export class StratumMiner extends EventEmitter {
     let startedAt = Date.now();
     let lastStatus = 0;
     let curGpuBatch = 1 << 24;
-    const targetBatchSeconds = 2.0;
+    const dutyPercent = normalizeGpuDutyPercent(this.settings);
+    const targetBatchSeconds = dutyPercent < 100 ? 0.25 : 2.0;
     while (!this.stopped && this.connected) {
       const job = this.state.currentJob;
       const diff = this.state.difficulty;
@@ -517,10 +542,15 @@ export class StratumMiner extends EventEmitter {
         const desired = Math.max(1 << 22, Math.min(Math.trunc(hashrate * targetBatchSeconds), 1 << 30));
         curGpuBatch = Math.trunc((curGpuBatch * 3 + desired) / 4);
       }
+      const throttleMs = !res.found ? gpuThrottleSleepMs({ dutyPercent, elapsedMs }) : 0;
+      if (throttleMs > 0) await sleep(throttleMs);
+      const effectiveHashrate = throttleMs > 0 && checked > 0
+        ? checked * 1000 / Math.max(elapsedMs + throttleMs, 1)
+        : hashrate;
       const now = Date.now();
       if (now - lastStatus >= 5000) {
-        const avgShare = formatDuration(expectedShareSeconds(diff, hashrate));
-        const mh = (hashrate / 1e6).toFixed(1);
+        const avgShare = formatDuration(expectedShareSeconds(diff, effectiveHashrate));
+        const mh = (effectiveHashrate / 1e6).toFixed(1);
         const uptime = Math.trunc((now - startedAt) / 1000);
         this.log(`[stratum] mining ~${mh} MH/s  diff=${diff}  avg_share=${avgShare}  shares=${this.accepted}  uptime=${uptime}s  job=${job.jobId} ex2=${ex2.toString('hex')}`);
         this.emit('mining-status', { hashrate: `${mh} MH/s`, shares: String(this.accepted) });

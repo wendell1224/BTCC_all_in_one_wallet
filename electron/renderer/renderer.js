@@ -38,11 +38,60 @@ function setValue(id, value) {
   $(id).value = value ?? '';
 }
 
+function setChecked(id, value) {
+  $(id).checked = Boolean(value);
+}
+
 function bindInput(id, key) {
   $(id).addEventListener('change', async () => {
     state.settings[key] = $(id).value;
     await api.settings.update({ [key]: $(id).value });
   });
+}
+
+function dutyValue() {
+  const value = Number(state.settings.miningDutyPercent);
+  return Number.isFinite(value) ? Math.min(100, Math.max(5, value)) : 10;
+}
+
+function renderPowerControls() {
+  const enabled = Boolean(state.settings.lowPowerMining);
+  const duty = dutyValue();
+  for (const prefix of ['', 'solo']) {
+    const lowPowerId = prefix ? 'soloLowPowerMining' : 'lowPowerMining';
+    const dutyId = prefix ? 'soloMiningDutyPercent' : 'miningDutyPercent';
+    const labelId = prefix ? 'soloMiningDutyLabel' : 'miningDutyLabel';
+    const hintId = prefix ? 'soloMiningDutyHint' : 'miningDutyHint';
+    setChecked(lowPowerId, enabled);
+    setValue(dutyId, duty);
+    $(dutyId).disabled = !enabled;
+    setText(labelId, `${duty}%`);
+    setText(hintId, enabled ? '低占用保持在线' : '全性能');
+  }
+}
+
+async function updatePowerSettings(patch) {
+  state.settings = { ...state.settings, ...patch };
+  renderPowerControls();
+  state.settings = unwrap(await api.settings.update(patch));
+  renderPowerControls();
+}
+
+function bindPowerControls() {
+  for (const prefix of ['', 'solo']) {
+    const lowPowerId = prefix ? 'soloLowPowerMining' : 'lowPowerMining';
+    const dutyId = prefix ? 'soloMiningDutyPercent' : 'miningDutyPercent';
+    $(lowPowerId).addEventListener('change', async () => {
+      await updatePowerSettings({ lowPowerMining: $(lowPowerId).checked });
+    });
+    $(dutyId).addEventListener('input', () => {
+      state.settings.miningDutyPercent = Number($(dutyId).value);
+      renderPowerControls();
+    });
+    $(dutyId).addEventListener('change', async () => {
+      await updatePowerSettings({ miningDutyPercent: Number($(dutyId).value) });
+    });
+  }
 }
 
 function renderMiner(miner) {
@@ -58,6 +107,9 @@ function renderMiner(miner) {
   $('buildMetal').disabled = Boolean(miner.isRunning || miner.isBusy);
   $('smokeTest').disabled = Boolean(miner.isRunning || miner.isBusy);
   $('proxyTest').disabled = Boolean(miner.isRunning || miner.isBusy);
+  for (const id of ['lowPowerMining', 'miningDutyPercent', 'soloLowPowerMining', 'soloMiningDutyPercent']) {
+    $(id).disabled = Boolean(miner.isRunning || miner.isBusy || (id.includes('Duty') && !state.settings.lowPowerMining));
+  }
   setText('logText', miner.logText?.trim() ? miner.logText : '等待操作…');
   $('logText').scrollTop = $('logText').scrollHeight;
 }
@@ -249,6 +301,8 @@ function collectSettings() {
   };
   const next = { ...state.settings };
   for (const key of keys) next[key] = $(ids[key]).value;
+  next.lowPowerMining = Boolean(state.settings.lowPowerMining);
+  next.miningDutyPercent = dutyValue();
   state.settings = next;
   return next;
 }
@@ -266,6 +320,7 @@ async function initSettings() {
   setValue('rpcUser', state.settings.rpcUser);
   setValue('rpcPassword', state.settings.rpcPassword);
   setValue('soloAddress', state.settings.soloAddress);
+  renderPowerControls();
   bindInput('mineAddress', 'address');
   bindInput('poolAddress', 'address');
   bindInput('worker', 'worker');
@@ -277,6 +332,7 @@ async function initSettings() {
   bindInput('rpcUser', 'rpcUser');
   bindInput('rpcPassword', 'rpcPassword');
   bindInput('soloAddress', 'soloAddress');
+  bindPowerControls();
 }
 
 function bindEvents() {

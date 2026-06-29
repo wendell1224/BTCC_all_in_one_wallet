@@ -3,6 +3,7 @@ import { request as httpRequest } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { sha256d } from './wallet-core.js';
 import { MetalGpuHelper } from './metal-helper.js';
+import { gpuThrottleSleepMs, normalizeGpuDutyPercent } from './stratum-node.js';
 
 function varint(n) {
   const value = Number(n);
@@ -256,6 +257,7 @@ export class SoloMiner extends EventEmitter {
       timeout: 10000
     };
     this.address = String(settings.soloAddress || '').trim();
+    this.dutyPercent = normalizeGpuDutyPercent(settings);
     this.gpuBinary = gpuBinary;
     this.stopped = false;
     this.helper = null;
@@ -272,6 +274,9 @@ export class SoloMiner extends EventEmitter {
     this.log(`[miner] RPC endpoint: http://${this.settings.host}:${this.settings.port}`);
     this.log('[miner] Wallet: miner');
     this.log(`[miner] Mining payout: ${payout.address}`);
+    if (this.dutyPercent < 100) {
+      this.log(`[miner] low-power online mode: GPU duty ${this.dutyPercent}%`);
+    }
     this.emit('status', { running: true, message: '挖矿中…' });
     this.mineLoop(payout).catch((error) => {
       if (!this.stopped) this.log(`[miner] error: ${error.message}`);
@@ -281,7 +286,7 @@ export class SoloMiner extends EventEmitter {
 
   async mineLoop(payout) {
     let curGpuBatch = 1 << 25;
-    const targetBatchSeconds = 2.0;
+    const targetBatchSeconds = this.dutyPercent < 100 ? 0.25 : 2.0;
     let lastPrev = '';
     while (!this.stopped) {
       let tmpl;
@@ -354,9 +359,14 @@ export class SoloMiner extends EventEmitter {
             const desired = Math.max(1 << 22, Math.min(Math.trunc(hr * targetBatchSeconds), 1 << 30));
             curGpuBatch = Math.trunc((curGpuBatch * 3 + desired) / 4);
           }
+          const throttleMs = !result.found
+            ? gpuThrottleSleepMs({ dutyPercent: this.dutyPercent, elapsedMs: Number(result.elapsed_ms || 0) })
+            : 0;
+          if (throttleMs > 0) await new Promise((resolve) => setTimeout(resolve, throttleMs));
           const dt = Math.max((Date.now() - t0) / 1000, 1e-6);
-          this.log(`[miner] gpu ~${(hr / 1e6).toFixed(2)} MH/s (effective ${(totalChecked / dt / 1e6).toFixed(2)} MH/s) height=${height} ext=${extranonceCounter} checked=${totalChecked}`);
-          this.emit('mining-status', { hashrate: `${(hr / 1e6).toFixed(2)} MH/s` });
+          const effectiveHashrate = totalChecked / dt;
+          this.log(`[miner] gpu ~${(hr / 1e6).toFixed(2)} MH/s (effective ${(effectiveHashrate / 1e6).toFixed(2)} MH/s) height=${height} ext=${extranonceCounter} checked=${totalChecked}`);
+          this.emit('mining-status', { hashrate: `${(effectiveHashrate / 1e6).toFixed(2)} MH/s` });
           if (result.found) {
             const nonce = Number(result.nonce) >>> 0;
             const headerFull = Buffer.concat([

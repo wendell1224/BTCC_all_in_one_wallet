@@ -191,6 +191,15 @@
           <div class="form-row"><label for="poolURL">矿池 URL</label><input id="poolURL" placeholder="stratum+tcp://..." /></div>
           <div class="form-row"><label for="proxy">代理 (可选)</label><input id="proxy" placeholder="http://127.0.0.1:7890" /></div>
           <div class="form-row"><label for="suggestDifficulty">建议难度 (-1=自动)</label><input id="suggestDifficulty" class="tiny" /></div>
+          <div class="form-row power-row">
+            <label for="lowPowerMining">低功耗在线</label>
+            <div class="power-control">
+              <label class="checkbox-label"><input id="lowPowerMining" type="checkbox" /> 启用</label>
+              <input id="miningDutyPercent" type="range" min="5" max="100" step="5" />
+              <code id="miningDutyLabel">10%</code>
+              <span id="miningDutyHint" class="caption">全性能</span>
+            </div>
+          </div>
           <p class="caption">用户名 = 地址.worker | 国内用户请填 Clash 代理并确保规则放行矿池</p>
           <div class="actions large">
             <button id="startStratum" class="primary">开始挖矿</button>
@@ -204,6 +213,15 @@
           <div class="form-row"><label for="rpcUser">RPC 用户</label><input id="rpcUser" /></div>
           <div class="form-row"><label for="rpcPassword">RPC 密码</label><input id="rpcPassword" type="password" /></div>
           <div class="form-row"><label for="soloAddress">收款地址 (可选)</label><input id="soloAddress" placeholder="留空则节点自动分配" /></div>
+          <div class="form-row power-row">
+            <label for="soloLowPowerMining">低功耗在线</label>
+            <div class="power-control">
+              <label class="checkbox-label"><input id="soloLowPowerMining" type="checkbox" /> 启用</label>
+              <input id="soloMiningDutyPercent" type="range" min="5" max="100" step="5" />
+              <code id="soloMiningDutyLabel">10%</code>
+              <span id="soloMiningDutyHint" class="caption">全性能</span>
+            </div>
+          </div>
           <div class="actions large">
             <button id="startSolo" class="primary">开始 Solo</button>
             <button id="stopSolo" class="danger">停止</button>
