@@ -14,8 +14,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build DMG
-        run: ./scripts/build_dmg.sh
+      - name: Install Node dependencies
+        run: npm ci --cache .npm-cache
+
+      - name: Build Electron assets
+        run: ./scripts/build_electron.sh
 
       - name: Read version
         id: ver
@@ -24,7 +27,12 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/BTCC-Wallet-v${{ steps.ver.outputs.version }}.dmg
+          files: |
+            dist/electron/BTCC Wallet-${{ steps.ver.outputs.version }}-arm64.dmg
+            dist/electron/BTCC Wallet-${{ steps.ver.outputs.version }}-arm64.dmg.blockmap
+            dist/electron/BTCC Wallet-${{ steps.ver.outputs.version }}-arm64-mac.zip
+            dist/electron/BTCC Wallet-${{ steps.ver.outputs.version }}-arm64-mac.zip.blockmap
+            dist/electron/latest-mac.yml
           body_path: docs/releases/v${{ steps.ver.outputs.version }}.md
           draft: false
           prerelease: false
