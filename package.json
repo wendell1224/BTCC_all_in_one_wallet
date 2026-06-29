@@ -1,0 +1,53 @@
+{
+  "name": "btcc-wallet-electron",
+  "version": "1.0.2",
+  "private": true,
+  "type": "module",
+  "description": "BTCC Wallet Electron client",
+  "author": "BTCC Wallet Contributors",
+  "main": "electron/main.js",
+  "scripts": {
+    "start:electron": "electron .",
+    "smoke:electron": "BTCC_ELECTRON_SMOKE=1 BTCC_ELECTRON_USER_DATA=/tmp/btcc-wallet-electron-smoke electron .",
+    "test:node": "node --test tests/node/*.test.js",
+    "test": "npm run test:node && python3 -m unittest discover -s tests -p 'test_*.py'",
+    "build:electron:dir": "electron-builder --dir",
+    "build:electron": "electron-builder"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "@noble/secp256k1": "^3.1.0",
+    "@scure/base": "^1.2.6",
+    "@scure/bip32": "^1.7.0",
+    "@scure/bip39": "^1.6.0"
+  },
+  "devDependencies": {
+    "electron": "^41.8.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "org.btc-classic.wallet",
+    "productName": "BTCC Wallet",
+    "directories": {
+      "output": "dist/electron"
+    },
+    "files": [
+      "electron/**/*",
+      "src/metal_nonce_finder",
+      "scripts/build_metal.sh",
+      "logo.jpg",
+      "VERSION"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "mac": {
+      "category": "public.app-category.finance",
+      "icon": "gui/AppIcon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    }
+  }
+}

@@ -129,6 +129,12 @@ final class MinerSettings: ObservableObject {
     @Published var suggestDifficulty: String {
         didSet { UserDefaults.standard.set(suggestDifficulty, forKey: "suggestDifficulty") }
     }
+    @Published var lowPowerMining: Bool {
+        didSet { UserDefaults.standard.set(lowPowerMining, forKey: "lowPowerMining") }
+    }
+    @Published var miningDutyPercent: Double {
+        didSet { UserDefaults.standard.set(miningDutyPercent, forKey: "miningDutyPercent") }
+    }
 
     @Published var rpcHost: String {
         didSet { UserDefaults.standard.set(rpcHost, forKey: "rpcHost") }
@@ -153,6 +159,9 @@ final class MinerSettings: ObservableObject {
         poolURL = d.string(forKey: "poolURL") ?? "stratum+tcp://pool.btc-classic.org:63101"
         proxy = d.string(forKey: "proxy") ?? ""
         suggestDifficulty = d.string(forKey: "suggestDifficulty") ?? "-1"
+        lowPowerMining = d.object(forKey: "lowPowerMining") == nil ? false : d.bool(forKey: "lowPowerMining")
+        let savedDuty = d.object(forKey: "miningDutyPercent") as? Double ?? 10
+        miningDutyPercent = min(100, max(5, savedDuty))
         rpcHost = d.string(forKey: "rpcHost") ?? "127.0.0.1"
         rpcPort = d.string(forKey: "rpcPort") ?? "28476"
         rpcUser = d.string(forKey: "rpcUser") ?? "user"

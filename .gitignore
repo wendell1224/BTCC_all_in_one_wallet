@@ -8,6 +8,10 @@ __pycache__/
 .venv/
 venv/
 
+# Node / Electron
+node_modules/
+.npm-cache/
+
 # Editor / OS
 .DS_Store
 .idea/

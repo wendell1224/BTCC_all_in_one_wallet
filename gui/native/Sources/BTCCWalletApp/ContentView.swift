@@ -122,6 +122,7 @@ struct ContentView: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 80)
             }
+            miningPowerControls
 
             Text("用户名 = 地址.worker  |  国内用户请填 Clash 代理并确保规则放行矿池")
                 .font(.caption)
@@ -712,6 +713,7 @@ struct ContentView: View {
             FormRow(label: "收款地址 (可选)") {
                 TextField("留空则节点自动分配", text: $settings.soloAddress).textFieldStyle(.roundedBorder)
             }
+            miningPowerControls
 
             Spacer(minLength: 8)
 
@@ -731,6 +733,26 @@ struct ContentView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .disabled(!runner.isRunning)
+            }
+        }
+    }
+
+    private var miningPowerControls: some View {
+        FormRow(label: "低功耗在线") {
+            HStack(spacing: 12) {
+                Toggle("启用", isOn: $settings.lowPowerMining)
+                    .toggleStyle(.checkbox)
+                    .disabled(runner.isRunning)
+                Slider(value: $settings.miningDutyPercent, in: 5...100, step: 5)
+                    .frame(width: 180)
+                    .disabled(!settings.lowPowerMining || runner.isRunning)
+                Text("\(Int(settings.miningDutyPercent))%")
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 48, alignment: .trailing)
+                    .foregroundColor(settings.lowPowerMining ? .primary : .secondary)
+                Text(settings.lowPowerMining ? "低占用保持在线" : "全性能")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
     }

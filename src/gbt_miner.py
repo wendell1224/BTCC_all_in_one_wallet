@@ -31,6 +31,16 @@ def sha256d(b: bytes) -> bytes:
     return hashlib.sha256(hashlib.sha256(b).digest()).digest()
 
 
+def gpu_throttle_sleep_seconds(*, duty_percent: float, elapsed_ms: float) -> float:
+    if duty_percent >= 100.0:
+        return 0.0
+    duty = max(1.0, min(100.0, duty_percent)) / 100.0
+    active = max(0.0, elapsed_ms) / 1000.0
+    if active <= 0.0:
+        return 0.0
+    return active * ((1.0 / duty) - 1.0)
+
+
 def varint(n: int) -> bytes:
     if n < 0:
         raise ValueError("varint negative")
@@ -477,13 +487,19 @@ def mine_forever(args: argparse.Namespace,
                     )
 
                     total_checked += batch_size
-                    dt = max(time.time() - t0, 1e-6)
                     hr_kernel = int(result.get("hashrate", 0))
                     # Adapt batch size toward target_batch_seconds of GPU work.
                     if auto_batch and hr_kernel > 0:
                         desired = int(hr_kernel * target_batch_seconds)
                         desired = max(1 << 22, min(desired, 1 << 30))
                         cur_gpu_batch = (cur_gpu_batch * 3 + desired) // 4
+                    throttle_sleep = gpu_throttle_sleep_seconds(
+                        duty_percent=float(args.gpu_duty_percent),
+                        elapsed_ms=float(result.get("elapsed_ms", 0.0)),
+                    )
+                    if throttle_sleep > 0.0 and not result.get("found"):
+                        time.sleep(throttle_sleep)
+                    dt = max(time.time() - t0, 1e-6)
                     print(
                         f"[miner] gpu ~{hr_kernel/1e6:.2f} MH/s (effective "
                         f"{total_checked/dt/1e6:.2f} MH/s) "
@@ -672,6 +688,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                    help="Per Metal dispatch size (0 = auto, scaled to GPU cores).")
     p.add_argument("--gpu-threadgroup", type=int, default=0,
                    help="Threads per Metal threadgroup (0 = auto).")
+    p.add_argument("--gpu-duty-percent", type=float, default=100.0,
+                   help="Average GPU duty cycle percent. 100 = no throttling; "
+                        "10 means run short GPU batches and idle between them.")
     return p.parse_args(argv)
 
 

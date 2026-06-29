@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BTCC Wallet</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="status-bar">
+        <div class="status-left">
+          <span id="runIcon" class="status-dot muted"></span>
+          <span id="statusMessage">就绪</span>
+        </div>
+        <div class="status-metrics">
+          <span>算力: <code id="hashrate">—</code></span>
+          <span>Shares: <code id="shares">0</code></span>
+          <span id="gpuBadge" class="gpu-badge"><span class="badge-dot warn"></span>GPU 未编译</span>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="主导航">
+        <button class="tab active" data-tab="wallet">钱包</button>
+        <button class="tab" data-tab="otc">OTC</button>
+        <button class="tab" data-tab="pool">矿池算力</button>
+        <button class="tab" data-tab="stratum">矿池挖矿</button>
+        <button class="tab" data-tab="solo">Solo</button>
+        <button class="tab" data-tab="tools">工具</button>
+      </nav>
+
+      <main class="content">
+        <section id="wallet" class="panel active">
+          <div id="walletCreate" class="wallet-create">
+            <p class="muted">BIP39 助记词钱包（BIP84 路径 m/84'/0'/0'/0/0，cc1 地址）</p>
+            <div id="walletUnlock" class="unlock-box hidden">
+              <h2>解锁钱包</h2>
+              <div class="form-row">
+                <label for="walletPassword">钱包密码</label>
+                <input id="walletPassword" type="password" autocomplete="current-password" />
+              </div>
+              <div class="actions">
+                <button id="unlockWallet" class="primary">解锁</button>
+              </div>
+              <p class="caption">钱包密码只用于本机解密，不会保存，也不会访问系统钥匙串。</p>
+            </div>
+            <div id="walletNewPasswordBox">
+              <div class="form-row">
+                <label for="newWalletPassword">钱包密码</label>
+                <input id="newWalletPassword" type="password" autocomplete="new-password" placeholder="至少 8 位" />
+              </div>
+              <p class="caption">助记词将使用此密码通过 scrypt + AES-256-GCM 加密保存到本机文件，不访问系统钥匙串。</p>
+            </div>
+            <div class="actions">
+              <button id="createWallet" class="primary">创建新钱包</button>
+            </div>
+            <hr />
+            <h2>导入助记词</h2>
+            <textarea id="importMnemonic" class="mnemonic-input" spellcheck="false"></textarea>
+            <button id="importWallet">导入钱包</button>
+            <p id="walletCreateStatus" class="muted"></p>
+          </div>
+
+          <div id="walletOverview" class="hidden wallet-overview">
+            <div class="address-row">
+              <div>
+                <div class="caption">地址</div>
+                <code id="walletAddress" class="selectable"></code>
+              </div>
+              <button id="copyAddress">复制地址</button>
+            </div>
+
+            <div class="balance-row">
+              <div>
+                <div class="caption">已确认</div>
+                <strong id="balanceConfirmed">0.00000000 BTCC</strong>
+              </div>
+              <div>
+                <div class="caption">未确认</div>
+                <strong id="balanceUnconfirmed">0.00000000 BTCC</strong>
+              </div>
+              <span class="spacer"></span>
+              <button id="refreshBalance">刷新余额</button>
+            </div>
+
+            <p class="caption">助记词: <span id="mnemonicPreview"></span></p>
+
+            <hr />
+            <h2>转账</h2>
+            <div class="form-row">
+              <label for="sendTo">收款地址</label>
+              <input id="sendTo" placeholder="cc1 / 1 / 3 地址" />
+            </div>
+            <div class="form-row">
+              <label for="sendAmount">金额 (BTCC)</label>
+              <input id="sendAmount" class="short" placeholder="0.001" />
+            </div>
+            <div class="form-row">
+              <label for="sendMemo">备注</label>
+              <input id="sendMemo" placeholder="可选" />
+            </div>
+            <div class="actions">
+              <button id="sendTx" class="primary">发送</button>
+              <button id="lockWallet">锁定钱包</button>
+              <button id="deleteWallet" class="danger">删除钱包</button>
+            </div>
+            <p id="walletStatus" class="muted"></p>
+            <div id="txResult" class="tx-result hidden">
+              <div class="caption">交易 ID</div>
+              <code id="lastTxid" class="selectable"></code>
+              <div class="actions compact">
+                <button id="copyTxid">复制 TXID</button>
+                <button id="openTx">区块浏览器</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="otc" class="panel">
+          <div class="toolbar">
+            <h2>OTC 行情</h2>
+            <span class="muted">otc.btc-classic.org</span>
+            <span class="spacer"></span>
+            <span id="otcUpdated" class="muted"></span>
+            <button id="openOtc">打开 OTC</button>
+            <button id="refreshOtc">刷新</button>
+          </div>
+          <p id="otcError" class="error"></p>
+          <div id="otcEmpty" class="empty">暂无 OTC 数据</div>
+          <div id="otcData" class="hidden">
+            <div class="otc-hero">
+              <div>
+                <div class="caption">最新成交价</div>
+                <div class="price"><span id="otcPrice">0.0000</span> <small id="otcToken">USDT</small></div>
+              </div>
+              <div class="divider"></div>
+              <div>
+                <div id="otcChange" class="change">24h 0.00%</div>
+                <div id="otcVolume" class="muted mono">24h 成交 0.00 BTCC</div>
+                <div id="otcTurnover" class="caption">成交额 0.00 USDT</div>
+              </div>
+            </div>
+            <div id="otcGrid" class="metric-grid"></div>
+          </div>
+        </section>
+
+        <section id="pool" class="panel">
+          <div class="form-row">
+            <label for="poolAddress">矿工地址</label>
+            <input id="poolAddress" placeholder="cc1q..." />
+            <button id="poolUseWallet">用钱包地址</button>
+          </div>
+          <div class="actions">
+            <button id="refreshPool">查询矿池算力</button>
+            <span class="caption">数据来源: pool.btc-classic.org</span>
+          </div>
+          <p id="poolError" class="error"></p>
+          <div class="stat-list">
+            <div><span>当前总算力</span><code id="poolHashrate">—</code></div>
+            <div><span>待结算余额</span><code id="poolBalance">—</code></div>
+            <div><span>待结算份额</span><code id="poolShares">—</code></div>
+          </div>
+          <h2>Worker 算力</h2>
+          <div id="workerRows" class="rows muted">暂无 Worker 数据</div>
+          <h2>24h 采样</h2>
+          <div id="sampleRows" class="rows muted">暂无采样数据</div>
+          <hr />
+          <div class="toolbar">
+            <h2>算力排行榜</h2>
+            <span class="tag">Solo Top</span>
+            <span id="rankingUpdated" class="muted"></span>
+            <span class="spacer"></span>
+            <button id="refreshRanking">刷新排行</button>
+          </div>
+          <p id="rankingError" class="error"></p>
+          <div class="ranking">
+            <div class="ranking-head">
+              <span>#</span><span>矿工地址</span><span>Worker</span><span>1h</span><span>1d</span><span>7d</span><span>Best</span>
+            </div>
+            <div id="rankingRows"></div>
+          </div>
+        </section>
+
+        <section id="stratum" class="panel">
+          <div class="form-row">
+            <label for="mineAddress">收款地址 (cc1...)</label>
+            <input id="mineAddress" placeholder="cc1q..." />
+            <button id="mineUseWallet">用钱包地址</button>
+          </div>
+          <div class="form-row"><label for="worker">Worker 名称</label><input id="worker" /></div>
+          <div class="form-row"><label for="poolURL">矿池 URL</label><input id="poolURL" placeholder="stratum+tcp://..." /></div>
+          <div class="form-row"><label for="proxy">代理 (可选)</label><input id="proxy" placeholder="http://127.0.0.1:7890" /></div>
+          <div class="form-row"><label for="suggestDifficulty">建议难度 (-1=自动)</label><input id="suggestDifficulty" class="tiny" /></div>
+          <p class="caption">用户名 = 地址.worker | 国内用户请填 Clash 代理并确保规则放行矿池</p>
+          <div class="actions large">
+            <button id="startStratum" class="primary">开始挖矿</button>
+            <button id="stopStratum" class="danger">停止</button>
+          </div>
+        </section>
+
+        <section id="solo" class="panel">
+          <div class="form-row"><label for="rpcHost">RPC 主机</label><input id="rpcHost" /></div>
+          <div class="form-row"><label for="rpcPort">RPC 端口</label><input id="rpcPort" class="short" /></div>
+          <div class="form-row"><label for="rpcUser">RPC 用户</label><input id="rpcUser" /></div>
+          <div class="form-row"><label for="rpcPassword">RPC 密码</label><input id="rpcPassword" type="password" /></div>
+          <div class="form-row"><label for="soloAddress">收款地址 (可选)</label><input id="soloAddress" placeholder="留空则节点自动分配" /></div>
+          <div class="actions large">
+            <button id="startSolo" class="primary">开始 Solo</button>
+            <button id="stopSolo" class="danger">停止</button>
+          </div>
+        </section>
+
+        <section id="tools" class="panel">
+          <p class="muted">首次使用请先编译 Metal GPU Helper（需要 Xcode Command Line Tools）</p>
+          <div class="actions">
+            <button id="buildMetal">编译 Metal Helper</button>
+            <button id="smokeTest">GPU 冒烟测试</button>
+            <button id="proxyTest">测试代理</button>
+          </div>
+          <p class="caption">项目路径: <span id="projectPath"></span></p>
+        </section>
+      </main>
+
+      <section id="bottomWallet" class="bottom-panel">
+        <div class="history-head">
+          <h2>钱包历史</h2>
+          <span class="spacer"></span>
+          <span id="historyCount" class="muted">0 笔 1/1</span>
+          <button id="historyPrev">上一页</button>
+          <button id="historyNext">下一页</button>
+          <button id="historyRefresh">刷新</button>
+        </div>
+        <div id="historyRows" class="history-list">未创建钱包</div>
+      </section>
+
+      <section id="bottomLog" class="bottom-panel hidden">
+        <div class="history-head">
+          <h2>运行日志</h2>
+          <span class="spacer"></span>
+          <button id="clearLog">清空</button>
+        </div>
+        <pre id="logText">等待操作…</pre>
+      </section>
+    </div>
+
+    <dialog id="mnemonicDialog">
+      <h2>请备份助记词</h2>
+      <p class="muted">助记词是恢复钱包的唯一凭证，请抄写在纸上妥善保管，切勿截图或上传云端。</p>
+      <pre id="createdMnemonic"></pre>
+      <div class="actions">
+        <button id="copyMnemonic">复制</button>
+        <span class="spacer"></span>
+        <button id="closeMnemonic" class="primary">我已备份</button>
+      </div>
+    </dialog>
+
+    <script type="module" src="./renderer.js"></script>
+  </body>
+</html>

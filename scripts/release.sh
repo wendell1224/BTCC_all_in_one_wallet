@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a versioned DMG and publish to GitHub Releases.
+# Build versioned Electron assets and publish to GitHub Releases.
 #
 # Prerequisites:
 #   brew install gh
@@ -33,7 +33,12 @@ done
 VERSION="$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")"
 TAG="v${VERSION}"
 NOTES="$REPO_ROOT/docs/releases/${TAG}.md"
-DMG="$REPO_ROOT/dist/BTCC-Wallet-v${VERSION}.dmg"
+ELECTRON_DIST="$REPO_ROOT/dist/electron"
+DMG="$ELECTRON_DIST/BTCC Wallet-${VERSION}-arm64.dmg"
+ZIP="$ELECTRON_DIST/BTCC Wallet-${VERSION}-arm64-mac.zip"
+DMG_BLOCKMAP="$DMG.blockmap"
+ZIP_BLOCKMAP="$ZIP.blockmap"
+LATEST="$ELECTRON_DIST/latest-mac.yml"
 
 echo "[release] version: ${VERSION}  tag: ${TAG}"
 
@@ -43,16 +48,20 @@ if [[ ! -f "$NOTES" ]]; then
     exit 1
 fi
 
-echo "[release] building DMG ..."
-"$SCRIPT_DIR/build_dmg.sh"
+echo "[release] building Electron DMG/ZIP ..."
+"$SCRIPT_DIR/build_electron.sh"
 
 if [[ ! -f "$DMG" ]]; then
-    echo "[release] error: expected DMG missing: $DMG"
+    echo "[release] error: expected Electron DMG missing: $DMG"
+    exit 1
+fi
+if [[ ! -f "$ZIP" ]]; then
+    echo "[release] error: expected Electron ZIP missing: $ZIP"
     exit 1
 fi
 
-echo "[release] built: $DMG"
-ls -lh "$DMG"
+echo "[release] built assets:"
+ls -lh "$DMG" "$ZIP"
 
 if [[ "$BUILD_ONLY" -eq 1 ]]; then
     echo "[release] done (--build-only)"
@@ -70,11 +79,11 @@ if [[ -n "$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null)" ]]; then
 fi
 
 if gh release view "$TAG" >/dev/null 2>&1; then
-    echo "[release] release ${TAG} exists — uploading/replacing DMG asset ..."
-    gh release upload "$TAG" "$DMG" --clobber
+    echo "[release] release ${TAG} exists — uploading/replacing assets ..."
+    gh release upload "$TAG" "$DMG" "$ZIP" "$DMG_BLOCKMAP" "$ZIP_BLOCKMAP" "$LATEST" --clobber
 else
     echo "[release] creating GitHub release ${TAG} ..."
-    gh release create "$TAG" "$DMG" \
+    gh release create "$TAG" "$DMG" "$ZIP" "$DMG_BLOCKMAP" "$ZIP_BLOCKMAP" "$LATEST" \
         --title "BTCC Wallet ${TAG}" \
         --notes-file "$NOTES"
 fi

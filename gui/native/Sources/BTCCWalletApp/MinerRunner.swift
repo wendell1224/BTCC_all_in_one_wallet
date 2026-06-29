@@ -201,11 +201,17 @@ final class MinerRunner: ObservableObject {
         if !proxy.isEmpty { args += ["--proxy", proxy] }
         let suggest = settings.suggestDifficulty.trimmingCharacters(in: .whitespaces)
         if !suggest.isEmpty { args += ["--suggest-difficulty", suggest] }
+        if settings.lowPowerMining {
+            args += lowPowerArgs(settings: settings)
+        }
 
         shares = "0"
         hashrate = "—"
         appendLog("[gui] 启动矿池挖矿: \(user) @ \(pool)")
         if !proxy.isEmpty { appendLog("[gui] 代理: \(proxy)") }
+        if settings.lowPowerMining {
+            appendLog("[gui] 低功耗在线模式: GPU 平均占用 \(Int(settings.miningDutyPercent))%")
+        }
         launch(python: py, scriptArgs: args)
     }
 
@@ -234,8 +240,14 @@ final class MinerRunner: ObservableObject {
         ]
         let addr = settings.soloAddress.trimmingCharacters(in: .whitespaces)
         if !addr.isEmpty { args += ["--address", addr] }
+        if settings.lowPowerMining {
+            args += lowPowerArgs(settings: settings)
+        }
 
         appendLog("[gui] 启动 Solo 挖矿 …")
+        if settings.lowPowerMining {
+            appendLog("[gui] 低功耗在线模式: GPU 平均占用 \(Int(settings.miningDutyPercent))%")
+        }
         launch(python: py, scriptArgs: args)
     }
 
@@ -279,6 +291,14 @@ final class MinerRunner: ObservableObject {
     }
 
     // MARK: - Process control
+
+    private func lowPowerArgs(settings: MinerSettings) -> [String] {
+        let duty = min(100, max(5, settings.miningDutyPercent))
+        return [
+            "--gpu-duty-percent", String(format: "%.0f", duty),
+            "--gpu-target-seconds", "0.25"
+        ]
+    }
 
     private func launch(python: String, scriptArgs: [String]) {
         let proc = Process()

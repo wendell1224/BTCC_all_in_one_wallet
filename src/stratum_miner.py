@@ -75,6 +75,22 @@ def format_duration(seconds: Optional[float]) -> str:
     return f"{seconds / 86400:.1f}d"
 
 
+def gpu_throttle_sleep_seconds(*, duty_percent: float, elapsed_ms: float) -> float:
+    """Return the idle time needed to approximate a GPU duty cycle.
+
+    The Metal helper still runs each active batch at normal speed. Throttling is
+    done between batches so the pool connection stays alive while average GPU
+    usage drops substantially.
+    """
+    if duty_percent >= 100.0:
+        return 0.0
+    duty = max(1.0, min(100.0, duty_percent)) / 100.0
+    active = max(0.0, elapsed_ms) / 1000.0
+    if active <= 0.0:
+        return 0.0
+    return active * ((1.0 / duty) - 1.0)
+
+
 def submit_nonce_hex(nonce: int) -> str:
     """Stratum mining.submit expects the nonce as the big-endian hex of the
     uint32 value (cgminer / ckpool / NOMP / Slush convention).
@@ -814,6 +830,7 @@ def mine_session(args: argparse.Namespace, host: str, port: int,
     auto_batch = (args.gpu_batch is None) or (int(args.gpu_batch) <= 0)
     cur_gpu_batch = (1 << 24) if auto_batch else int(args.gpu_batch)
     target_batch_seconds = float(args.gpu_target_seconds)
+    gpu_duty_percent = float(args.gpu_duty_percent)
 
     while client.connected:
         # Wait until we have a job AND a difficulty.
@@ -862,6 +879,15 @@ def mine_session(args: argparse.Namespace, host: str, port: int,
                     desired = int(actual_hps * target_batch_seconds)
                     desired = max(1 << 22, min(desired, 1 << 30))
                     cur_gpu_batch = (cur_gpu_batch * 3 + desired) // 4
+            throttle_sleep = gpu_throttle_sleep_seconds(
+                duty_percent=gpu_duty_percent,
+                elapsed_ms=float(res.get("elapsed_ms", 0.0)),
+            )
+            if throttle_sleep > 0.0 and not res.get("found"):
+                time.sleep(throttle_sleep)
+                checked = int(res.get("checked", 0))
+                active = max(float(res.get("elapsed_ms", 0.0)) / 1000.0, 1e-9)
+                res["hashrate"] = int(checked / max(active + throttle_sleep, 1e-9))
         else:
             res = cpu_search(
                 header80=header_template,
@@ -1094,6 +1120,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                    help="Per Metal dispatch size (0 = auto, scaled to GPU cores).")
     p.add_argument("--gpu-threadgroup", type=int, default=0,
                    help="Threads per Metal threadgroup (0 = auto).")
+    p.add_argument("--gpu-duty-percent", type=float, default=100.0,
+                   help="Average GPU duty cycle percent. 100 = no throttling; "
+                        "10 means run short GPU batches and idle between them.")
 
     p.add_argument("--cpu-batch", type=int, default=1 << 18,
                    help="Nonces per CPU pass when --gpu is not used (default 256K).")
